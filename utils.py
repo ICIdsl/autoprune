@@ -15,7 +15,7 @@ class PathTruncatingFormatter(logging.Formatter):
         record.pathname = filename
         return super(PathTruncatingFormatter, self).format(record)
 
-def initialise_logging():
+def initialiseLogging():
     logger = logging.getLogger()
     logger.setLevel(logging.NOTSET)
     syslog = logging.StreamHandler(sys.stdout)
@@ -23,30 +23,30 @@ def initialise_logging():
     syslog.setFormatter(formatter)
     logger.addHandler(syslog)
 
-def layer_to_ignore(layer_name, ignore_layers):
-    if ignore_layers is None:
+def layerToIgnore(layerName, ignoreLayers):
+    if ignoreLayers is None:
         return False 
     
     outcomes = []
-    for x in ignore_layers:
+    for x in ignoreLayers:
         cond = x.split('::')[0]
         kw = x.split('::')[1]
         if cond == 'is':
-            outcomes.append(kw == layer_name)
+            outcomes.append(kw == layerName)
         elif cond == 'contains':
-            outcomes.append(kw in layer_name)
+            outcomes.append(kw in layerName)
         else:
             raise ArgumentError(f"Condition {cond} not addressed.")
     return any(outcomes)
 
-def reshape_tensor(tensor, filters, axis):
+def reshapeTensor(tensor, filters, axis):
     if axis == 0:
-        new_tensor = tensor[filters] 
+        newTensor = tensor[filters] 
     elif axis == 1:
-        new_tensor = tensor[:,filters]
-    return new_tensor
+        newTensor = tensor[:,filters]
+    return newTensor
 
-def reshape_conv_layer(m, filters, ofm):
+def reshapeConvLayer(m, filters, ofm):
     axis = 0 if ofm else 1 
     if ofm:
         if m.weight.shape[axis] == len(filters):
@@ -55,25 +55,25 @@ def reshape_conv_layer(m, filters, ofm):
         if m.weight.shape[axis] == len(filters):
             return
     
-    new_weight = reshape_tensor(m.weight, filters, axis) 
-    m.weight = torch.nn.Parameter(new_weight)
+    newWeight = reshapeTensor(m.weight, filters, axis) 
+    m.weight = torch.nn.Parameter(newWeight)
     if m.bias is not None:
-        new_bias = reshape_tensor(m.bias, filters, axis) 
-        m.bias = torch.nn.Parameter(new_bias)
+        newBias = reshapeTensor(m.bias, filters, axis) 
+        m.bias = torch.nn.Parameter(newBias)
 
-def reshape_bn_layer(m, filters):
-    new_weight = reshape_tensor(m.weight, filters, axis=0) 
-    m.weight = torch.nn.Parameter(new_weight)
-    new_bias = reshape_tensor(m.bias, filters, axis=0)
-    m.bias = torch.nn.Parameter(new_bias)
-    m.running_mean = reshape_tensor(m.running_mean, filters, axis=0)
-    m.running_var = reshape_tensor(m.running_var, filters, axis=0)
+def reshapeBnLayer(m, filters):
+    newWeight = reshapeTensor(m.weight, filters, axis=0) 
+    m.weight = torch.nn.Parameter(newWeight)
+    newBias = reshapeTensor(m.bias, filters, axis=0)
+    m.bias = torch.nn.Parameter(newBias)
+    m.runningMean = reshapeTensor(m.runningMean, filters, axis=0)
+    m.runningVar = reshapeTensor(m.runningVar, filters, axis=0)
 
-def reshape_linear_layer(m, prev_m, filters):
-    spatial_dims = int(m.in_features / prev_m.out_channels)
-    if m.weight.shape[1] == len(filters) * spatial_dims:
+def reshapeLinearLayer(m, prevM, filters):
+    spatialDims = int(m.inFeatures / prevM.outChannels)
+    if m.weight.shape[1] == len(filters) * spatialDims:
         return
-    _filters = [x for y in filters for x in range(y,y+spatial_dims)]
-    new_weight = reshape_tensor(m.weight, _filters, axis=1) 
-    m.weight = torch.nn.Parameter(new_weight)
+    _filters = [x for y in filters for x in range(y,y+spatialDims)]
+    newWeight = reshapeTensor(m.weight, _filters, axis=1) 
+    m.weight = torch.nn.Parameter(newWeight)
 

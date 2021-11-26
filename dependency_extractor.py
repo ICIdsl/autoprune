@@ -6,153 +6,227 @@ import logging
 import torch
 import numpy as np
 
-def find_all_convs(graph):
-    return graph.findAllNodes('aten::conv2d')
+def convOpName(traced=True):
+    return 'aten::_convolution' if traced else 'aten::conv2d'
 
-def find_all_bn(graph):
-    return graph.findAllNodes('aten::batch_norm')
+def bnOpName(traced=True):
+    return 'aten::batch_norm'
 
-def find_all_fcs(graph):
-    return graph.findAllNodes('aten::matmul')
+def fcOpName(traced=True):
+    return 'aten::addmm' if traced else 'aten::matmul'
 
-def find_all_add_nodes(graph):
-    return graph.findAllNodes('aten::add_')
+def addOpNames(traced=True):
+    return ['aten::add', 'aten::add_']
 
-def translate_sequential_dependencies(deps, conv_translate):
-    new_deps = {conv_translate[k] : [conv_translate[x] for x in v] for k,v in deps.items()}
-    return new_deps
+def findAllConvs(graph, traced=True):
+    return graph.findAllNodes(convOpName(traced))
 
-def translate_add_dependencies(deps, conv_translate):
-    remove_idx = []
-    new_deps = [[conv_translate[x] for x in v] for k,v in deps.items()]
-    for i,deps in enumerate(new_deps):
-        if any(set(deps) < set(x) for j,x in enumerate(new_deps) if i != j):
-            remove_idx.append(i)
-    no_redundency_deps = [x for i,x in enumerate(new_deps) if i not in remove_idx]
+def findAllBn(graph, traced=True):
+    return graph.findAllNodes(bnOpName(traced))
+
+def findAllFcs(graph, traced=True):
+    return graph.findAllNodes(fcOpName(traced))
+
+def findAllAddNodes(graph, traced=True):
+    nodes = []
+    nodes += graph.findAllNodes(addOpNames(traced)[0])
+    nodes += graph.findAllNodes(addOpNames(traced)[1])
+    return nodes 
+
+def node2Str(node):
+    return str(node).strip()
+
+def translateNode(node, translator):
+    return node if node not in translator.keys() else translator[node]
+
+def reverseLookup(modelName, translator):
+    return [k for k,v in translator.items() if v == modelName][0]
+
+def translateIdomTree(tree, translator, _print=False):
+    trans= {translateNode(k, translator):\
+                            [translateNode(x, translator) for x in v if x in translator.keys()]\
+                                                                         for k,v in tree.items()}
+    if _print:
+        for k,v in trans.items():
+            print(k)
+            print(v)
+    return trans
+
+def translateSequentialDependencies(deps, convTranslate):
+    newDeps = {convTranslate[k] : [convTranslate[x] for x in v] for k,v in deps.items()}
+    return newDeps
+
+def translateAddDependencies(deps, convTranslate):
+    removeIdx = []
+    newDeps = [[convTranslate[x] for x in v] for k,v in deps.items()]
+    for i,deps in enumerate(newDeps):
+        if any(set(deps) < set(x) for j,x in enumerate(newDeps) if i != j):
+            removeIdx.append(i)
+    noRedundencyDeps = [x for i,x in enumerate(newDeps) if i not in removeIdx]
     
     duplicates = []
-    for i,deps in enumerate(no_redundency_deps):
-        _dup = [j for j,x in enumerate(no_redundency_deps) if i<j and set(deps) == set(x)]
+    for i,deps in enumerate(noRedundencyDeps):
+        _dup = [j for j,x in enumerate(noRedundencyDeps) if i<j and set(deps) == set(x)]
         if len(_dup) != 0:
             duplicates += _dup
-    no_redundency_deps = [x for i,x in enumerate(no_redundency_deps) if i not in duplicates]
-    return no_redundency_deps
+    noRedundencyDeps = [x for i,x in enumerate(noRedundencyDeps) if i not in duplicates]
+    return noRedundencyDeps
 
-def get_idom_tree(root, nodes, stop_at=None):
+def getIdomTree(root, nodes, stopAt=None):
     if not root.hasMultipleOutputs():
         node = root.output()
         for user in node.uses():
-            if user.user.kind() == stop_at:
+            if user.user.kind() == stopAt:
                 nodes.append(user.user)
             else:
                 if user.user.hasUses():
                     nodes.append(user.user)
-                    get_idom_tree(user.user, nodes, stop_at)
+                    getIdomTree(user.user, nodes, stopAt)
     else:
         logging.warning(f"Node {root} has multiple outputs!")
         sys.exit()
 
-def find_nodes_idom_by(root):
+def findNodesIdomBy(root, traced=True):
     nodes = []
-    get_idom_tree(root, nodes, stop_at='aten::conv2d')
+    getIdomTree(root, nodes, stopAt=convOpName(traced))
     return nodes
 
-def get_sequentially_connected_deps(idom_trees):
-    linked_convs = {c:[] for c in idom_trees.keys()}
-    for conv, tree in idom_trees.items():
+def filterImportantLayersInIdom(idomTrees, traced=True):
+    sanitisedIdom = {c:[] for c in idomTrees.keys()}
+    for conv, tree in idomTrees.items():
         for node in tree:
-            if node.kind() == 'aten::conv2d':
-                linked_convs[conv].append(node)
-            elif node.kind() == 'aten::batch_norm':
-                linked_convs[conv].append(node)
-            elif node.kind() == 'aten::matmul':
-                linked_convs[conv].append(node)
-    return linked_convs
+            if node.kind() == convOpName(traced):
+                sanitisedIdom[conv].append(node)
+            elif node.kind() == bnOpName(traced):
+                sanitisedIdom[conv].append(node)
+            elif node.kind() == fcOpName(node):
+                sanitisedIdom[conv].append(node)
+    return sanitisedIdom
 
-def get_add_connected_deps(idom_trees, add_nodes):
-    connected_convs = {n:[] for n in add_nodes}
-    for node in add_nodes:
+def getAddConnectedDepsOld(idomTrees, addNodes, traced=True):
+    connectedConvs = {n:[] for n in addNodes}
+    for node in addNodes:
         for inp in node.inputs():
-            for conv, tree in idom_trees.items():
+            for conv, tree in idomTrees.items():
                 if conv.output().debugName() == inp.debugName():
-                    connected_convs[node].append(conv)
+                    connectedConvs[node].append(conv)
                 else:
-                    for idom_node in tree:
-                        if idom_node.kind() != 'aten::conv2d':
-                            if idom_node.output().debugName() == inp.debugName():
-                                connected_convs[node].append(conv)
+                    for idomNode in tree:
+                        if not any(idomNode.kind() == x for x in addOpNames(traced)):
+                            if idomNode.output().debugName() == inp.debugName():
+                                connectedConvs[node].append(conv)
 
-    keys_to_remove = []
-    for k,v in connected_convs.items():
+    keysToRemove = []
+    for k,v in connectedConvs.items():
         if len(v) == 1:
-            keys_to_remove.append(k)
-    [connected_convs.pop(k) for k in keys_to_remove]
+            keysToRemove.append(k)
+    [connectedConvs.pop(k) for k in keysToRemove]
     
-    return connected_convs
-            
-def identify_dependencies(graph):
-    all_convs = find_all_convs(graph)         
-    add_nodes = find_all_add_nodes(graph)
-    
-    conv_idom_trees = {}
-    for conv in all_convs:
-        nodes = find_nodes_idom_by(conv)
-        conv_idom_trees[conv] = nodes
+    return connectedConvs
 
-    add_idom_trees = {}
-    for add in add_nodes:
-        nodes = find_nodes_idom_by(add)
-        add_idom_trees[add] = nodes
+def getAddConnectedDeps(convIdomTrees, allAdds, traced=True):
+    feederConvs= [] 
+    for addNode in allAdds
 
-    add_deps = get_add_connected_deps(conv_idom_trees, add_nodes)
-    add_node_connections = get_sequentially_connected_deps(add_idom_trees) 
-    conv_node_connections = get_sequentially_connected_deps(conv_idom_trees)
+    return connectedConvs
 
-    return {'seq_deps': conv_node_connections, 
-            'add_deps': add_deps,
-            'add_node_connections': add_node_connections}
+def getAddIdoms(allAdds):
+    addIdomTrees = {}
+    for add in allAdds:
+        nodes = findNodesIdomBy(add)
+        addIdomTrees[add] = nodes
+    return addIdomTrees
 
-def get_dependencies(model):
-    scripted_model = torch.jit.script(model)
-    network_graph = scripted_model.inlined_graph
-    dependencies = identify_dependencies(network_graph)
-    
-    model_convs = [n for n,m in model.named_modules() if isinstance(m, torch.nn.Conv2d)]
-    graph_convs = find_all_convs(network_graph)
-    conv_translate = {g:m for g,m in zip(graph_convs, model_convs)}
-    
-    model_bns = [n for n,m in model.named_modules() if isinstance(m, torch.nn.BatchNorm2d)]
-    graph_bns = find_all_bn(network_graph)
-    for m_bn, g_bn in zip(model_bns, graph_bns):
-        conv_translate[g_bn] = m_bn
-    
-    first_model_fc = [n for n,m in model.named_modules() if isinstance(m, torch.nn.Linear)][0]
-    first_graph_fc = find_all_fcs(network_graph)[0]
-    conv_translate[first_graph_fc] = first_model_fc
+def getConvIdoms(allConvs):
+    convIdomTrees = {}
+    for conv in allConvs:
+        nodes = findNodesIdomBy(conv)
+        convIdomTrees[conv] = nodes
+    return convIdomTrees
 
-    model_deps = {}
-    for dep_type, deps in dependencies.items():
-        if dep_type == 'seq_deps':
-            model_deps['layer_connectivity'] = translate_sequential_dependencies(deps, conv_translate)
-            breakpoint()
-        elif dep_type == 'add_deps':
-            model_deps['add_dependencies'] = translate_add_dependencies(deps, conv_translate)
-        elif dep_type == 'add_node_connections':
-            model_deps['add_node_connections'] = translate_add_dependencies(deps, conv_translate)
-    
-    return model_deps
+def getDwConvs(model, translator):
+    dwConvs= []
+    for n,m in model.named_modules():
+        if isinstance(m, torch.nn.Conv2d):
+            if m.groups != 1: 
+                if m.groups == m.in_channels:
+                    dwConvs.append(reverseLookup(n, translator))
+                else:
+                    raise NotImplementedError("Grouped convs not implemented")
+    return dwConvs
 
-def categorise_dependencies(dependencies):
-    local_dep_types = ['dw_dependencies']
-    global_dep_types = ['add_dependencies']
-    local_deps = [x for k,l in dependencies.items() for x in l if k in local_dep_types]
-    global_deps = [x for k,l in dependencies.items() for x in l if k in global_dep_types]
+def identifyDependencies(model, graph, translator):
+    allConvs = findAllConvs(graph)         
+    convIdomTrees = getConvIdoms(allConvs) 
     
-    connectivity = dependencies['layer_connectivity']
+    allAdds = findAllAddNodes(graph)
+    addIdomTrees= getAddIdoms(allAdds)
+
+    dwConvs= getDwConvs(model, translator)
     
-    join_nodes = {}
-    if 'add_node_connections' in dependencies.keys():
-        join_nodes['aten::add_'] = dependencies['add_node_connections']
+    addDeps = getAddConnectedDeps(convIdomTrees, allAdds)
+    breakpoint()
+    add2convConnections = filterImportantLayersInIdom(addIdomTrees) 
+    conv2convConnections = filterImportantLayersInIdom(convIdomTrees)
+
+    return {'seqDeps': convNodeConnections, 
+            'addDeps': addDeps,
+            'addNodeConnections': addNodeConnections}
+
+def getModelGraph(model, traced):
+    if not traced:
+        print(f"Scripting model")
+        scriptedModel = torch.jit.script(model)
+        networkGraph = scriptedModel.inlined_graph
+    else:
+        print(f"Tracing model")
+        tracedModel= torch.jit.trace(model, torch.Tensor(1,3,224,224))
+        networkGraph= tracedModel.inlined_graph
+    return networkGraph
+
+def getGraphToModelTranslations(model, networkGraph, traced):
+    modelConvs = [n for n,m in model.named_modules() if isinstance(m, torch.nn.Conv2d)]
+    graphConvs = findAllConvs(networkGraph, traced)
+    convTranslate = {g:m for g,m in zip(graphConvs, modelConvs)}
     
-    return connectivity, join_nodes, local_deps, global_deps
+    modelBns = [n for n,m in model.named_modules() if isinstance(m, torch.nn.BatchNorm2d)]
+    graphBns = findAllBn(networkGraph, traced)
+    for mBn, gBn in zip(modelBns, graphBns):
+        convTranslate[gBn] = mBn
+    
+    firstModelFc = [n for n,m in model.named_modules() if isinstance(m, torch.nn.Linear)][0]
+    firstGraphFc = findAllFcs(networkGraph, traced)[0]
+    convTranslate[firstGraphFc] = firstModelFc
+    
+    return convTranslate    
+
+def getDependencies(model, traced=True):
+    networkGraph= getModelGraph(model, traced)
+    translator= getGraphToModelTranslations(model, networkGraph, traced) 
+    dependencies = identifyDependencies(model, networkGraph, translator)
+    
+    modelDeps = {}
+    for depType, deps in dependencies.items():
+        if depType == 'seqDeps':
+            modelDeps['layerConnectivity'] = translateSequentialDependencies(deps, convTranslate)
+        elif depType == 'addDeps':
+            modelDeps['addDependencies'] = translateAddDependencies(deps, convTranslate)
+        elif depType == 'addNodeConnections':
+            modelDeps['addNodeConnections'] = translateAddDependencies(deps, convTranslate)
+    
+    return modelDeps
+
+def categoriseDependencies(dependencies):
+    localDepTypes = ['dwDependencies']
+    globalDepTypes = ['addDependencies']
+    localDeps = [x for k,l in dependencies.items() for x in l if k in localDepTypes]
+    globalDeps = [x for k,l in dependencies.items() for x in l if k in globalDepTypes]
+    
+    connectivity = dependencies['layerConnectivity']
+    
+    joinNodes = {}
+    if 'addNodeConnections' in dependencies.keys():
+        joinNodes['aten::add_'] = dependencies['addNodeConnections']
+    
+    return connectivity, joinNodes, localDeps, globalDeps
 

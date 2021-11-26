@@ -10,7 +10,7 @@ from channel_ranking import *
 from pruning_estimator import *
 from dependency_extractor import *
 
-utils.initialise_logging()
+utils.initialiseLogging()
 
 
 

@@ -8,8 +8,8 @@ import numpy as np
 import utils
 
 def l1_norm(model, ignore=None):
-    local_ranking = {} 
-    global_ranking = []
+    localRanking = {} 
+    globalRanking = []
 
     # create global ranking
     layers = []
@@ -19,12 +19,12 @@ def l1_norm(model, ignore=None):
             metric = np.absolute(p).reshape(p.shape[0], -1).sum(axis=1)
             metric /= (p.shape[1]*p.shape[2]*p.shape[3])
             
-            local_ranking[n] = sorted([(i, x) for i,x in enumerate(metric)], key=lambda tup:tup[1])
+            localRanking[n] = sorted([(i, x) for i,x in enumerate(metric)], key=lambda tup:tup[1])
 
-            if not utils.layer_to_ignore(n, ignore):
-                global_ranking += [(n, i, x) for i,x in enumerate(metric)]
+            if not utils.layerToIgnore(n, ignore):
+                globalRanking += [(n, i, x) for i,x in enumerate(metric)]
 
-    global_ranking = sorted(global_ranking, key=lambda i: i[2]) 
+    globalRanking = sorted(globalRanking, key=lambda i: i[2]) 
     
-    return local_ranking, global_ranking
+    return localRanking, globalRanking
 

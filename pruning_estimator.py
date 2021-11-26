@@ -16,73 +16,73 @@ import pandas as pd
 import torch
 
 class NetworkSizeTracker():
-    def __init__(self, model, tracked_modules=None):
-        if tracked_modules is None:
-            self.tracked_modules = [torch.nn.Conv2d, torch.nn.BatchNorm2d, torch.nn.Linear]
-        self.size_dict = {n:(m, torch.tensor(m.weight.shape)) for n,m in model.named_modules() 
-                            if any(isinstance(m,x) for x in self.tracked_modules)}
+    def __init__(self, model, trackedModules=None):
+        if trackedModules is None:
+            self.trackedModules = [torch.nn.Conv2d, torch.nn.BatchNorm2d, torch.nn.Linear]
+        self.sizeDict = {n:(m, torch.tensor(m.weight.shape)) for n,m in model.namedModules() 
+                            if any(isinstance(m,x) for x in self.trackedModules)}
 
-    def prune_single_filter(self, layer, connectivity, join_points):
-        m, size = self.size_dict[layer] 
+    def pruneSingleFilter(self, layer, connectivity, joinPoints):
+        m, size = self.sizeDict[layer] 
         if isinstance(m, torch.nn.Conv2d):
-            pruned_params = self.conv_effect(m, size, axis=0, bias=(m.bias is not None))
+            prunedParams = self.convEffect(m, size, axis=0, bias=(m.bias is not None))
         else:
             raise ValueError(f"Pruning filter from non Conv2d module")
 
         for l in connectivity[layer]:
-            next_m, next_size = self.size_dict[l] 
-            if not self.remove_ic_channel_after_join(join_points, m, l, next_m):
+            nextM, nextSize = self.sizeDict[l] 
+            if not self.removeIcChannelAfterJoin(joinPoints, m, l, nextM):
                 continue
             
-            if isinstance(next_m, torch.nn.Conv2d):
-                pruned_params += self.conv_effect(next_m, next_size, axis=1, 
+            if isinstance(nextM, torch.nn.Conv2d):
+                prunedParams += self.convEffect(nextM, nextSize, axis=1, 
                                                   bias=(m.bias is not None))
-            elif isinstance(next_m, torch.nn.BatchNorm2d):
-                pruned_params += self.bn_effect(next_m, next_size)
-            elif isinstance(next_m, torch.nn.Linear):
-                pruned_params += self.linear_effect(next_m, next_size, m)
+            elif isinstance(nextM, torch.nn.BatchNorm2d):
+                prunedParams += self.bnEffect(nextM, nextSize)
+            elif isinstance(nextM, torch.nn.Linear):
+                prunedParams += self.linearEffect(nextM, nextSize, m)
         
-        return pruned_params
+        return prunedParams
 
-    def remove_ic_channel_after_join(self, join_nodes, curr_m, next_layer, next_m):
-        for join_type, n in join_nodes.items():
-            if any(next_layer in x for x in n):
-                if join_type == 'aten::add_':
-                    if isinstance(next_m, torch.nn.Conv2d):
-                        if curr_m.out_channels == next_m.in_channels:
+    def removeIcChannelAfterJoin(self, joinNodes, currM, nextLayer, nextM):
+        for joinType, n in joinNodes.items():
+            if any(nextLayer in x for x in n):
+                if joinType == 'aten::add_':
+                    if isinstance(nextM, torch.nn.Conv2d):
+                        if currM.outChannels == nextM.inChannels:
                             return False
-                    elif isinstance(next_m, torch.nn.BatchNorm2d):
-                        if curr_m.out_channels == next_m.num_features:
+                    elif isinstance(nextM, torch.nn.BatchNorm2d):
+                        if currM.outChannels == nextM.numFeatures:
                             return False
-                    elif isinstance(next_m, torch.nn.Linear):
-                        if curr_m.out_channels == next_m.in_features:
+                    elif isinstance(nextM, torch.nn.Linear):
+                        if currM.outChannels == nextM.inFeatures:
                             return False
         return True
     
-    def conv_effect(self, m, size, axis, bias=False):
+    def convEffect(self, m, size, axis, bias=False):
         if axis == 0:
-            m.out_channels -= 1
+            m.outChannels -= 1
         else:
-            m.in_channels -= 1
+            m.inChannels -= 1
             if m.groups != 1:
-                m.groups = m.in_channels
+                m.groups = m.inChannels
         
         size[axis] -= 1
-        pruned_params = torch.prod(size[[x for x in range(len(size)) if x != axis]]).item()
+        prunedParams = torch.prod(size[[x for x in range(len(size)) if x != axis]]).item()
         if bias:
-            pruned_params += 1
-        return pruned_params
+            prunedParams += 1
+        return prunedParams
     
-    def bn_effect(self, m, size):
+    def bnEffect(self, m, size):
         size[0] -= 1
-        m.num_features -= 1
-        # returns 4 as we have weight, bias, run_mean, run_var
+        m.numFeatures -= 1
+        # returns 4 as we have weight, bias, runMean, runVar
         return 4
     
-    def linear_effect(self, m, size, prev_module):
-        spatial_dims = int(m.weight.shape[1] / prev_module.weight.shape[0])
-        size[1] -= spatial_dims
-        m.in_features -= spatial_dims
-        pruned_params = int(spatial_dims * size[0])
-        return pruned_params
+    def linearEffect(self, m, size, prevModule):
+        spatialDims = int(m.weight.shape[1] / prevModule.weight.shape[0])
+        size[1] -= spatialDims
+        m.inFeatures -= spatialDims
+        prunedParams = int(spatialDims * size[0])
+        return prunedParams
 
