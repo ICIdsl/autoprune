@@ -8,8 +8,8 @@ import torch
 import numpy as np
 
 import utils
-import channel_ranking
 import dependency_extractor as de
+import channel_ranking as channelRanking
 from pruning_estimator import NetworkSizeTracker
 
 def rankFilters(rankingType, model, ignoreKws, customRanker):
@@ -54,7 +54,7 @@ def identifyFiltersToPrune(pl,
                              prnLimits):
     logging.info(f"Identifying Filters to Prune")
     paramCalc = lambda x : sum(np.prod(p.shape) for p in x.parameters())
-    model = _model.copy()
+    model = copy.deepcopy(_model)
     unprunedModelParams = paramCalc(model) 
     _channelsPerLayer = channelsPerLayer.copy()
     networkSizeTracker = NetworkSizeTracker(model)
@@ -87,15 +87,16 @@ def identifyFiltersToPrune(pl,
 
 def performPruning(prunedModel, filtersToKeep, connectivity):
     logging.info(f"Removing Filters")
-    modelDict = dict(prunedModel.namedModules())
-    for n,m in prunedModel.namedModules():
+    modelDict = dict(prunedModel.named_modules())
+    for n,m in prunedModel.named_modules():
         if isinstance(m, torch.nn.Conv2d):
             opFilters = [x for x,y in filtersToKeep[n]]
             utils.reshapeConvLayer(m, opFilters, ofm=True)
             for layer in connectivity[n]:
                 module = modelDict[layer]
                 if isinstance(module, torch.nn.Conv2d):
-                    utils.reshapeConvLayer(module, opFilters, ofm=False)
+                    if module.groups == 1:
+                        utils.reshapeConvLayer(module, opFilters, ofm=False)
                 elif isinstance(module, torch.nn.BatchNorm2d):
                     utils.reshapeBnLayer(module, opFilters)
                 elif isinstance(module, torch.nn.Linear):
@@ -105,14 +106,15 @@ def performPruning(prunedModel, filtersToKeep, connectivity):
 
 def checkPruning(model):
     logging.info(f"Checking prunining process")
-    for n,m in model.namedModules():
+    for n,m in model.named_modules():
         if isinstance(m, torch.nn.Conv2d):
-            assert m.outChannels == m.weight.shape[0], f"Layer {n} pruned incorrectly"
-            assert m.inChannels == m.weight.shape[1], f"Layer {n} pruned incorrectly"
+            assert m.out_channels == m.weight.shape[0], f"Layer {n} pruned incorrectly"
+            assert (m.in_channels // m.groups) == m.weight.shape[1],\
+                                                            f"Layer {n} pruned incorrectly"
         elif isinstance(m, torch.nn.BatchNorm2d):
-            assert m.numFeatures == m.weight.shape[0], f"Layer {n} pruned incorrectly"
+            assert m.num_features == m.weight.shape[0], f"Layer {n} pruned incorrectly"
         elif isinstance(m, torch.nn.Linear):
-            assert m.inFeatures == m.weight.shape[1], f"Layer {n} pruned incorrectly"
+            assert m.in_features == m.weight.shape[1], f"Layer {n} pruned incorrectly"
 
 def pruneNetwork(pl,
                   model,
@@ -124,12 +126,9 @@ def pruneNetwork(pl,
     
     assert 0 <= pl < 1, "Pruning level must be value in range [0,1)" 
     
-    dependencies = de.getDependencies(model)
-    connectivity, joinNodes, localDeps, globalDeps = de.categoriseDependencies(dependencies)
-    breakpoint()
+    connectivity, joinNodes, localDeps, globalDeps = de.getDependencies(model)
     
-    channelsPerLayer, globalRanking = rankFilters(rankingType, model, ignoreKws,\
-                                                      customRanker)
+    channelsPerLayer, globalRanking = rankFilters(rankingType, model, ignoreKws, customRanker)
     
     prnLimits = {k:minFiltersKept for k in channelsPerLayer.keys()}
     if maintainNetworkWidth:

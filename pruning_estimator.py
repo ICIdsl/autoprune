@@ -19,7 +19,7 @@ class NetworkSizeTracker():
     def __init__(self, model, trackedModules=None):
         if trackedModules is None:
             self.trackedModules = [torch.nn.Conv2d, torch.nn.BatchNorm2d, torch.nn.Linear]
-        self.sizeDict = {n:(m, torch.tensor(m.weight.shape)) for n,m in model.namedModules() 
+        self.sizeDict = {n:(m, torch.tensor(m.weight.shape)) for n,m in model.named_modules() 
                             if any(isinstance(m,x) for x in self.trackedModules)}
 
     def pruneSingleFilter(self, layer, connectivity, joinPoints):
@@ -47,25 +47,25 @@ class NetworkSizeTracker():
     def removeIcChannelAfterJoin(self, joinNodes, currM, nextLayer, nextM):
         for joinType, n in joinNodes.items():
             if any(nextLayer in x for x in n):
-                if joinType == 'aten::add_':
+                if joinType == 'addJoins':
                     if isinstance(nextM, torch.nn.Conv2d):
-                        if currM.outChannels == nextM.inChannels:
+                        if currM.out_channels == nextM.in_channels:
                             return False
                     elif isinstance(nextM, torch.nn.BatchNorm2d):
-                        if currM.outChannels == nextM.numFeatures:
+                        if currM.out_channels == nextM.numFeatures:
                             return False
                     elif isinstance(nextM, torch.nn.Linear):
-                        if currM.outChannels == nextM.inFeatures:
+                        if currM.out_channels == nextM.in_features:
                             return False
         return True
     
     def convEffect(self, m, size, axis, bias=False):
         if axis == 0:
-            m.outChannels -= 1
+            m.out_channels -= 1
         else:
-            m.inChannels -= 1
+            m.in_channels -= 1
             if m.groups != 1:
-                m.groups = m.inChannels
+                m.groups = m.in_channels
         
         size[axis] -= 1
         prunedParams = torch.prod(size[[x for x in range(len(size)) if x != axis]]).item()
@@ -75,14 +75,14 @@ class NetworkSizeTracker():
     
     def bnEffect(self, m, size):
         size[0] -= 1
-        m.numFeatures -= 1
+        m.num_features -= 1
         # returns 4 as we have weight, bias, runMean, runVar
         return 4
     
     def linearEffect(self, m, size, prevModule):
         spatialDims = int(m.weight.shape[1] / prevModule.weight.shape[0])
         size[1] -= spatialDims
-        m.inFeatures -= spatialDims
+        m.in_features -= spatialDims
         prunedParams = int(spatialDims * size[0])
         return prunedParams
 

@@ -66,11 +66,11 @@ def reshapeBnLayer(m, filters):
     m.weight = torch.nn.Parameter(newWeight)
     newBias = reshapeTensor(m.bias, filters, axis=0)
     m.bias = torch.nn.Parameter(newBias)
-    m.runningMean = reshapeTensor(m.runningMean, filters, axis=0)
-    m.runningVar = reshapeTensor(m.runningVar, filters, axis=0)
+    m.running_mean = reshapeTensor(m.running_mean, filters, axis=0)
+    m.running_var = reshapeTensor(m.running_var, filters, axis=0)
 
 def reshapeLinearLayer(m, prevM, filters):
-    spatialDims = int(m.inFeatures / prevM.outChannels)
+    spatialDims = int(m.in_features / prevM.out_channels)
     if m.weight.shape[1] == len(filters) * spatialDims:
         return
     _filters = [x for y in filters for x in range(y,y+spatialDims)]
