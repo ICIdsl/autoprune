@@ -9,6 +9,22 @@ from tqdm import tqdm
 
 import torch
 
+class ImmutableClass(object):
+    def makeAttrMutable(self, name):
+        if name in self.attrWasSet:
+            idx = self.attrWasSet.index(name)
+            self.attrWasSet.pop(idx)
+    
+    def __setattr__(self, name, value):
+        if not hasattr(self, 'attrWasSet'):
+            self.__dict__['attrWasSet'] = []
+        
+        if name in self.attrWasSet:
+            raise AttributeError('Cannot change state once created')
+        else:
+            self.attrWasSet.append(name)
+            super().__setattr__(name, value)
+
 class PathTruncatingFormatter(logging.Formatter):
     def format(self, record): 
         filename = record.pathname.split('autoprune/')[-1]
