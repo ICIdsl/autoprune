@@ -5,7 +5,7 @@ import logging
 import torch
 import numpy as np
 
-import utils
+from .utils import * 
 
 def l1_norm(model, ignore=None):
     localRanking = {} 
@@ -21,7 +21,7 @@ def l1_norm(model, ignore=None):
             
             localRanking[n] = sorted([(i, x) for i,x in enumerate(metric)], key=lambda tup:tup[1])
 
-            if not utils.layerToIgnore(n, ignore):
+            if not layerToIgnore(n, ignore):
                 globalRanking += [(n, i, x) for i,x in enumerate(metric)]
 
     globalRanking = sorted(globalRanking, key=lambda i: i[2]) 

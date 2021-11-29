@@ -159,7 +159,8 @@ def layerConnectivity(graph, translator):
     relevantLayerConnections = filterImportantLayersInIdom(convIdomTrees)
     connectivity= {translateNode(k, translator): [translateNode(x, translator) for x in v]\
                                                     for k,v in relevantLayerConnections.items()}
-    return connectivity 
+    noRepeateConnectivity= {k: list(set(v)) for k,v in connectivity.items()}
+    return noRepeateConnectivity 
 
 def localDependencies(model, graph, translator):
     dwDeps= depthwiseDeps(model, graph, translator)

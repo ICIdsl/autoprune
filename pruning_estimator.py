@@ -67,8 +67,13 @@ class NetworkSizeTracker():
             if m.groups != 1:
                 m.groups = m.in_channels
         
-        size[axis] -= 1
-        prunedParams = torch.prod(size[[x for x in range(len(size)) if x != axis]]).item()
+        if m.groups == 1:
+            size[axis] -= 1
+            prunedParams = torch.prod(size[[x for x in range(len(size)) if x != axis]]).item()
+        else:
+            size[0] -= 1
+            prunedParams = torch.prod(size[1:]).item()
+
         if bias:
             prunedParams += 1
         return prunedParams

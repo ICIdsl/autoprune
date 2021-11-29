@@ -7,16 +7,16 @@ import logging
 import torch
 import numpy as np
 
-import utils
-import dependency_extractor as de
-import channel_ranking as channelRanking
-from pruning_estimator import NetworkSizeTracker
+from .utils import *
+from .channel_ranking import *
+from .dependency_extractor import *
+from .pruning_estimator import NetworkSizeTracker
 
 def rankFilters(rankingType, model, ignoreKws, customRanker):
     if customRanker is None:
         logging.info(f"Performing {rankingType} ranking of filters")
         if rankingType == 'l1-norm':
-            channelsPerLayer, globalRanking = channelRanking.l1_norm(model, ignore=ignoreKws)
+            channelsPerLayer, globalRanking = l1_norm(model, ignore=ignoreKws)
         else:
             raise ArgumentError(f"Ranking Type {rankingType}, unsupported by default")
     else:
@@ -78,8 +78,7 @@ def identifyFiltersToPrune(pl,
             _channelsPerLayer[layer].pop([i for i,x in enumerate(_channelsPerLayer[layer])\
                                         if x[0] == filterNum][0])
             
-            prunedParams = networkSizeTracker.pruneSingleFilter(layer, connectivity,
-                                                                     joinNodes)
+            prunedParams = networkSizeTracker.pruneSingleFilter(layer, connectivity, joinNodes)
             prunedModelParams -= prunedParams
             currPr = 1. - (prunedModelParams / unprunedModelParams)
         filterIdx += 1
@@ -91,16 +90,16 @@ def performPruning(prunedModel, filtersToKeep, connectivity):
     for n,m in prunedModel.named_modules():
         if isinstance(m, torch.nn.Conv2d):
             opFilters = [x for x,y in filtersToKeep[n]]
-            utils.reshapeConvLayer(m, opFilters, ofm=True)
+            reshapeConvLayer(m, opFilters, ofm=True)
             for layer in connectivity[n]:
                 module = modelDict[layer]
                 if isinstance(module, torch.nn.Conv2d):
                     if module.groups == 1:
-                        utils.reshapeConvLayer(module, opFilters, ofm=False)
+                        reshapeConvLayer(module, opFilters, ofm=False)
                 elif isinstance(module, torch.nn.BatchNorm2d):
-                    utils.reshapeBnLayer(module, opFilters)
+                    reshapeBnLayer(module, opFilters)
                 elif isinstance(module, torch.nn.Linear):
-                    utils.reshapeLinearLayer(module, m, opFilters)
+                    reshapeLinearLayer(module, m, opFilters)
     checkPruning(prunedModel)
     return prunedModel
 
@@ -114,7 +113,10 @@ def checkPruning(model):
         elif isinstance(m, torch.nn.BatchNorm2d):
             assert m.num_features == m.weight.shape[0], f"Layer {n} pruned incorrectly"
         elif isinstance(m, torch.nn.Linear):
-            assert m.in_features == m.weight.shape[1], f"Layer {n} pruned incorrectly"
+            try:
+                assert m.in_features == m.weight.shape[1], f"Layer {n} pruned incorrectly"
+            except Exception as e:
+                breakpoint()
 
 def pruneNetwork(pl,
                   model,
@@ -126,7 +128,7 @@ def pruneNetwork(pl,
     
     assert 0 <= pl < 1, "Pruning level must be value in range [0,1)" 
     
-    connectivity, joinNodes, localDeps, globalDeps = de.getDependencies(model)
+    connectivity, joinNodes, localDeps, globalDeps = getDependencies(model)
     
     channelsPerLayer, globalRanking = rankFilters(rankingType, model, ignoreKws, customRanker)
     
