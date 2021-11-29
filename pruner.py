@@ -8,6 +8,7 @@ import torch
 import numpy as np
 
 from .utils import *
+from .model_graph import *
 from .channel_ranking import *
 from .dependency_extractor import *
 from .pruning_estimator import NetworkSizeTracker
@@ -128,6 +129,8 @@ def pruneNetwork(pl,
     
     assert 0 <= pl < 1, "Pruning level must be value in range [0,1)" 
     
+    modelGraph= getGraph(model)
+    breakpoint()
     connectivity, joinNodes, localDeps, globalDeps = getDependencies(model)
     
     channelsPerLayer, globalRanking = rankFilters(rankingType, model, ignoreKws, customRanker)
