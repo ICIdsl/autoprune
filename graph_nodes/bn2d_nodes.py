@@ -8,7 +8,7 @@ class BatchNorm2DNode(PrunerNode):
         super().__init__(name, module, node)
         self.filters= list(range(module.num_features))
 
-    def pruneIpFilter(self, filterNum):
+    def pruneIpFilter(self, filterNum, layer=None):
         if filterNum in self.filters:
             self.module.num_features -= 1 
             filterIdx= self.filters.index(filterNum)
@@ -16,7 +16,7 @@ class BatchNorm2DNode(PrunerNode):
             self.updatePrunedParams(4) # weight, bias, runMean, runVar
         
         for node in self.nextNodes:
-            node.pruneIpFilter(filterNum)
+            node.pruneIpFilter(filterNum, layer)
 
     def prune(self, seenNodes):
         if self in seenNodes:

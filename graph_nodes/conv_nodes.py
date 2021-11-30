@@ -33,9 +33,9 @@ class Conv2DNode(PrunerNode):
                 convNode.pruneOpFilter(filterNum)
 
             for node in self.nextNodes:
-                node.pruneIpFilter(filterNum)
+                node.pruneIpFilter(filterNum, layer=self.name)
 
-    def pruneIpFilter(self, filterNum):
+    def pruneIpFilter(self, filterNum, layer=None):
         if filterNum in self.inChannels:
             self.module.in_channels -= 1 
             if self.module.groups != 1:

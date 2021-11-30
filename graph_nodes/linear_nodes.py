@@ -7,7 +7,7 @@ class LinearNode(PrunerNode):
     def __init__(self, name, module, node):
         super().__init__(name, module, node)
 
-    def pruneIpFilter(self, filterNum):
+    def pruneIpFilter(self, filterNum, layer=None):
         if filterNum in self.ipFilters:
             self.module.in_features -= self.spatialDims
             paramsPruned= self.spatialDims * self.module.out_features

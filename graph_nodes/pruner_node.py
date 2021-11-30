@@ -18,9 +18,9 @@ class PrunerNode(ImmutableClass):
         self.makeAttrMutable('prunedParams')
         self.prunedParams += paramsPruned
 
-    def pruneIpFilter(self, filterNum):
+    def pruneIpFilter(self, filterNum, layer=None):
         for node in self.nextNodes:
-            node.pruneIpFilter(filterNum)
+            node.pruneIpFilter(filterNum, layer=layer)
 
     def propagateChannelCounts(self, channelCounts):
         for nextNode in self.nextNodes:

@@ -17,17 +17,18 @@ def iterateGraph(node, model, seenNodes=[]):
         return 
     seenNodes.append(node)
     
-    if node.name == 'addJoin':
-        print("Convs that feed add node", [x.name for x in node.feederConvs])
+    print(node.name)
+    # if node.name == 'concatJoin':
+    #     print("Convs that feed add node", [x.name for x in node.feederConvs])
     
-    if isinstance(node.module, torch.nn.Conv2d):
-        print(f"Conv pruning limit: {node.name, node.pruningLimit}")
-        if node.module.groups != 1:
-            print("Convs connected to dw conv", node.dwLinkedConvs[0].name,\
-                                                        node.name, node.module.groups)
-    
-    if isinstance(node.module, torch.nn.Linear):
-        print(f"Spatial Dims: {node.name, node.spatialDims}")
+    # if isinstance(node.module, torch.nn.Conv2d):
+    #     print(f"Conv pruning limit: {node.name, node.pruningLimit}")
+    #     if node.module.groups != 1:
+    #         print("Convs connected to dw conv", node.dwLinkedConvs[0].name,\
+    #                                                     node.name, node.module.groups)
+    # 
+    # if isinstance(node.module, torch.nn.Linear):
+    #     print(f"Spatial Dims: {node.name, node.spatialDims}")
 
     for i,nextNode in enumerate(node.nextNodes):
         iterateGraph(nextNode, model)
@@ -79,8 +80,9 @@ def getExecutionGraph(network, model):
     return networkGraph
 
 def runPrePruningPasses(root): 
-    updateAddNodeInputConvs(root, []) 
+    updateConcatNodeInputConvs(root, []) 
     updateDwConvInputConvs(root, [])
+    updateAddNodeInputConvs(root, []) 
     root.propagateChannelCounts([])
 
 def rankFilters(rankingType, model, ignoreKws, customRanker):

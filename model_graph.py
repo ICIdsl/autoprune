@@ -141,6 +141,8 @@ def createFunctionalNode(node):
     assert node is not None, "Cannot create node without a node"
     if "aten::add" in node.kind():
         return AddNode('addJoin', None, node)
+    elif "aten::cat" in node.kind():
+        return ConcatNode('concatJoin', None, node)
     elif "aten::relu" in node.kind():
         return ReLUNode('relu', None, node)
     elif "aten::max_pool2d" in node.kind():

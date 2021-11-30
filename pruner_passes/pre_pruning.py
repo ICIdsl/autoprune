@@ -19,6 +19,28 @@ def updateConnectedAddJoin(node, convNode=None):
     for nextNode in node.nextNodes:
         updateConnectedAddJoin(nextNode, (convNode if convNode is not None else node))
 
+def updateConcatNodeInputConvs(node, seenNodes=[]):
+    '''
+    The left recursion pattern is important here as in the model, the left most input
+    is concatenated first (look at ConcatNode --> pruneIpFilter logic for why it's important)
+    '''
+    if node in seenNodes:
+        return
+    if isinstance(node.module, torch.nn.Conv2d):
+        updateConnectedConcatJoin(node)
+    seenNodes.append(node)
+    for nextNode in node.nextNodes:
+        updateConcatNodeInputConvs(nextNode, seenNodes)
+
+def updateConnectedConcatJoin(node, convNode=None):
+    if (convNode is not None) and isinstance(node.module, torch.nn.Conv2d):
+        # isn't connected to add before next conv
+        return
+    if node.name == 'concatJoin':
+        node.feederConvs.append(convNode)
+    for nextNode in node.nextNodes:
+        updateConnectedConcatJoin(nextNode, (convNode if convNode is not None else node))
+
 def updateDwConvInputConvs(node, seenNodes=[]):
     if node in seenNodes:
         return
