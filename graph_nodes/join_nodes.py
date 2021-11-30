@@ -5,11 +5,27 @@ class AddNode(PrunerNode):
     def __init__(self, name, module, node):
         super().__init__(name, module, node)
         self.feederConvs= []
+        self.feederChannelCounts= {}
 
-    def pruneIpFilter(self, layersPruned, filterNum):
-        # print(f"Pruning ip filter (pass through): {self.name}")
+    def pruneIpFilter(self, filterNum):
         for node in self.feederConvs:
-            if node not in layersPruned:
-                node.pruneOpFilter(filterNum)
+            node.pruneOpFilter(filterNum)
         for node in self.nextNodes:
-            node.pruneIpFilter(layersPruned, filterNum)
+            node.pruneIpFilter(filterNum)
+
+    def propagateChannelCounts(self, channelCounts):
+        layerName, channelCount= channelCounts
+        if any(layerName==x.name for x in self.feederConvs):
+            if layerName not in self.feederChannelCounts.keys():
+                self.feederChannelCounts[layerName] = channelCount
+
+                if len(self.feederChannelCounts) == len(self.feederConvs):
+                    channels= list(self.feederChannelCounts.values())
+                    assert channels.count(channels[0]) == len(channels),\
+                                                    "Inputs to add have been pruned differently"
+                    [self.feederChannelCounts.pop(x.name) for x in self.feederConvs]
+        
+        for nextNode in self.nextNodes:
+            nextNode.propagateChannelCounts(('addJoin', channelCount))
+
+

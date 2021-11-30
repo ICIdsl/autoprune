@@ -62,18 +62,3 @@ def limitGlobalPruning(node, pl):
         else:
             node.pruningLimit= int(math.ceil(channels * pl))
 
-def updateSpatialDimsToFc(node, seenNodes=[]):
-    if node in seenNodes:
-        return
-    if isinstance(node.module, torch.nn.Conv2d):
-        updateConnectedFc(node, node.module.weight.shape[2:].numel(), [])
-    seenNodes.append(node)
-    for nextNode in node.nextNodes:
-        updateSpatialDimsToFc(nextNode, seenNodes)
-
-def updateConnectedFc(node, spatialDims, seenNodes):
-    if node in seenNodes:
-        return
-    if isinstance(node.module, torch.nn.Linear)
-
-    
