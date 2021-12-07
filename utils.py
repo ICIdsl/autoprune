@@ -39,6 +39,10 @@ def initialiseLogging():
     syslog.setFormatter(formatter)
     logger.addHandler(syslog)
 
+def registerCustomFunction(pythonModule, funcName, newFunc):
+    currFn= copy.deepcopy(pythonModule.__dict__[funcName])
+    pythonModule.__dict__[funcName] = newFunc
+
 def layerToIgnore(layerName, ignoreLayers):
     if ignoreLayers is None:
         return False 
