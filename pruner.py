@@ -74,7 +74,8 @@ def getExecutionGraph(network, model):
     if os.path.isfile(tracedModelF):
         tracedModel= torch.jit.load(tracedModelF)
     else:
-        tracedModel= torch.jit.trace(model, torch.Tensor(1,3,224,224))
+        ipSize = getIpSizeForNetwork(network)
+        tracedModel= torch.jit.trace(model, torch.Tensor(1,3,ipSize,ipSize))
         torch.jit.save(tracedModel, tracedModelF)
     networkGraph= tracedModel.inlined_graph
     return networkGraph

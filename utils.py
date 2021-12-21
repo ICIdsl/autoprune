@@ -43,6 +43,12 @@ def registerCustomFunction(pythonModule, funcName, newFunc):
     currFn= copy.deepcopy(pythonModule.__dict__[funcName])
     pythonModule.__dict__[funcName] = newFunc
 
+def getIpSizeForNetwork(network):
+    if network == 'lenet':
+        return 32
+    else:
+        return 224
+
 def layerToIgnore(layerName, ignoreLayers):
     if ignoreLayers is None:
         return False 

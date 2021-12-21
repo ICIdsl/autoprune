@@ -35,7 +35,7 @@ def graphOpName(module):
     elif isinstance(module, torch.nn.BatchNorm2d):
         return "aten::batch_norm"
     elif isinstance(module, torch.nn.Linear):
-        return "aten::addmm"
+        return ["aten::addmm", "aten::matmul"]
     else:
         raise NotImplementedError(f"Graph Op Name for module {module}")
 
@@ -52,7 +52,8 @@ def baseModules(model):
     bm= []
     for n,m in model.named_modules():
         if any(isinstance(m, x) for x in validBaseModules()):
-            if not any(type(m) == type(x) for x in bm):
+            # if not any(type(m) == type(x) for x in bm):
+            if not any(m == x for x in bm):
                 bm.append(m)
     return bm
 
@@ -71,7 +72,17 @@ def getExecGraphToLayerNameTranslations(modules, model, execGraph):
     return translations
           
 def findAllNodesinExecGraph(graph, opName):
-    return graph.findAllNodes(opName)
+    if isinstance(opName, list):
+        nodes = {}
+        for name in opName:
+            nodes[name] = graph.findAllNodes(name)
+        assert sum(len(x) > 0 for x in nodes.values()),\
+              (f"Multiple options in {list(nodes.keys())} returned graph nodes. This is currently"
+                "not handled. This suggests different graph ops are being used for the same"
+                "network module.")
+        return [v for v in nodes.values() if len(v) > 0][0]
+    else:
+        return graph.findAllNodes(opName)
 
 def findAllLayersinModel(model, moduleType):
     return [(n,m) for n,m in model.named_modules() if isinstance(m, moduleType)]
